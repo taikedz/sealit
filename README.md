@@ -1,55 +1,64 @@
-# Seal-It !
+# Seal It!
 
-Add a dedicated Seal of Approval in an online location.
+A server app that produces a seal image when accessed.
 
-This is a server-side process that will serve up a Seal wherever you embed a URL to "http://<your-ip>/seal-of-approval"
+When a URL accesses `/seal` , a HTTP/300 message is returned with a URL to a seal picture.
 
-## Intention
+If the request comes with a `Location` header, a hash is registered and a seal URL is referenced against the hash. The same seal image is returned for a same Location.
 
-### On-request
+Seal URLs are pulled from a seals.db SQLite file.
 
-Server listens for a connection.
+Seal database can thereby be updated independently.
 
-Lift the `Location:` header and determine a sha1 hash.
+If a seal cannot be returned (missing reference, etc), a generic image is returned.
 
-Associate the oURL (origin URL) hash with a random sURL (seal URL) from the active loaded sURLs.
+## Arbitrary items
 
-Lookup the sURL using the oURL.
+Also respond to `/<tag>` - `/seal` would be the default configuration
 
-Serve a temporary redirect to the URL (temporary should be with a 30min (configurable) expiry), as well as a header `X-SealIt: <oHash>:<sHash>=<oURL>` for troubleshooting.
+Tag must be a valid C-variable name.
 
-We can this way associate any oURL with a sURL, without storing the oURL itself.
+Special tag `/-any` searches all URLs
 
-### Origin location hash generation
+## Database
 
-Generic algorithm simply generates a sha1 hash directly from the URL
+Table 1 : Tag
 
-Using a host glob, and alternative hash generator can be supplied, for example to remove any query sections of a URL (like, page identifiers on a forum)
+* id : int, PRI, AUTO
+* name : char[32]
 
-### Seal URL "database"
+Table 2 : Seals
 
-The seal URLs can be provided by adding them to a text file, one per line.
+* id : int, PRI, AUTO
+* url : blob[256]
+* tag : int -- reference to tag ID
 
-On start-up (or on hash-regeneration), SealIt will load these URLs and generate an in-memory hash for each, and adds this to a lookup table.
+Table 3 : Locations
 
-Any sURLs registered against a non-existent hash should redirect to the generic seal. This is to allow temporary disablement of previously-used seals.
+* hash : int, PRI
+* ref : int, ext key to Seals for the seal to return.
 
-In this way, sURLs have a deterministic hash and do not need to be stored. No stored memory of a prior sURL needs to be tracked.
+## Tools
 
-### Association database
+* `seal-serve` - to serve the seals. a read-only utility
+* `seal-update` - writes to a local SQLite DB. Operations:
+    * `load <file>` - load a file of URLs like `<tag> <url>` entries
+    * `add <tag> <url>` - add a single URL with a tag
+    * `list <tag>` - list URLs under a tag
+    * `search [-t <tag>] <term>` - search for text in each URL, optionally limiting to a tag space
+    * `del <id>` - delete a URL, by ID
+    * `retag <urlid> <newtag>` - reassociate a URL with a different tag. Create the tag if needed
+* `seal-check` - check all URLs in the database.
+    * remove any URLs that are returning HTTP/400 errors
+    * redirect registered locations for deleted URLs
 
-The database can be any implementaiton ; this specification allows simply for a key-value pair text file to serve. Using a SQlite database would improve on the performance once a few thousand oURLs are registered.
 
-The database handler only needs a couple of interactions form the code:
+## Hosting
 
-* `lookup(oHash) -> sHash`
-* `register(oHash, sHash)`
+Seal gen should be able to run on free tier hosting.
 
-To support some alternative implementations, two additional methods are specified:
+Therefore, implement either in
 
-* `load(path)` (likely always implemented)
-* `commit(path)` (ikely only for text-based implementations)
+* PHP - free tier sites can usually host basic PHP easily
+* Python - try <https://www.pythonanywhere.com/>
 
-## Language
-
-The above was written with Python on mind ; however writing against PHP may actually make more sense. A direct PHP/SQlite may be most lightweight way to put this together, and allow adding to free-tier-hosting solutions.
